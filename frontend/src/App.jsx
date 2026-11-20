@@ -18,14 +18,24 @@ export default function App() {
   const [loading, setLoading] = useState(false);
   const [simulateFailure, setSimulateFailure] = useState("");
   const [backendStatus, setBackendStatus] = useState(null);
+  const [recentSessions, setRecentSessions] = useState([]);
 
   const endRef = useRef(null);
 
-  // Initialize session on mount
+  // Initialize session on mount & load recent sessions from localStorage
   useEffect(() => {
     const newId = generateSessionId();
     setSessionId(newId);
     checkHealth();
+
+    try {
+      const stored = localStorage.getItem("lyftr_recent_sessions");
+      if (stored) {
+        setRecentSessions(JSON.parse(stored));
+      }
+    } catch {
+      // Ignore localStorage read errors
+    }
   }, []);
 
   // Auto-scroll on new messages
@@ -54,9 +64,58 @@ export default function App() {
     setInput("");
   };
 
+  // Load past conversation messages from SQLite backend via GET /sessions/{id}/messages
+  const loadPastSession = async (id) => {
+    try {
+      setLoading(true);
+      const res = await fetch(`${API_BASE_URL}/sessions/${id}/messages`);
+      if (res.ok) {
+        const data = await res.json();
+        setSessionId(id);
+        setMessages(data.messages || []);
+      } else {
+        alert("Session could not be loaded or has expired.");
+      }
+    } catch (err) {
+      console.error("Failed to load session:", err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const deleteSession = (e, id) => {
+    e.stopPropagation();
+    const updated = recentSessions.filter((s) => s.id !== id);
+    setRecentSessions(updated);
+    try {
+      localStorage.setItem("lyftr_recent_sessions", JSON.stringify(updated));
+    } catch {}
+    if (sessionId === id) {
+      startNewSession();
+    }
+  };
+
+  const saveRecentSession = (id, firstText) => {
+    setRecentSessions((prev) => {
+      if (prev.some((s) => s.id === id)) return prev;
+      const title =
+        firstText.length > 28 ? firstText.substring(0, 28) + "..." : firstText;
+      const updated = [{ id, title, time: new Date().toLocaleTimeString() }, ...prev];
+      try {
+        localStorage.setItem("lyftr_recent_sessions", JSON.stringify(updated.slice(0, 20)));
+      } catch {}
+      return updated.slice(0, 20);
+    });
+  };
+
   const sendMessage = async () => {
     const trimmed = input.trim();
     if (!trimmed || loading) return;
+
+    // Track in sidebar if first message of session
+    if (messages.length === 0) {
+      saveRecentSession(sessionId, trimmed);
+    }
 
     const userMessage = {
       role: "user",
@@ -178,8 +237,8 @@ export default function App() {
 
           <button
             onClick={startNewSession}
-            className="text-xs bg-white/10 hover:bg-white/15 border border-white/15 px-3 py-1.5 rounded-lg font-medium transition flex items-center gap-1.5"
-            title="Start a new session on demand"
+            className="text-xs bg-white/10 hover:bg-white/15 border border-white/15 px-3 py-1.5 rounded-lg font-medium transition flex items-center gap-1.5 cursor-pointer"
+            title="Start a fresh new session"
           >
             <span>+</span> New Session
           </button>
@@ -189,7 +248,61 @@ export default function App() {
       {/* Main Container */}
       <div className="flex flex-1 overflow-hidden">
         {/* Controls Sidebar */}
-        <aside className="w-80 bg-white/[0.03] backdrop-blur-xl border-r border-white/10 flex flex-col p-5 shrink-0 hidden md:flex space-y-6 overflow-y-auto">
+        <aside className="w-80 bg-white/[0.03] backdrop-blur-xl border-r border-white/10 flex flex-col p-5 shrink-0 hidden md:flex space-y-5 overflow-y-auto">
+          {/* New Chat Button */}
+          <button
+            onClick={startNewSession}
+            className="w-full border border-white/20 rounded-xl p-2.5 hover:bg-white/10 transition flex items-center justify-center gap-2 font-medium text-xs bg-white/5 shadow-sm cursor-pointer"
+          >
+            <span className="text-sm">+</span> New Chat
+          </button>
+
+          {/* Recent Chats List */}
+          <div className="space-y-2">
+            <p className="text-[11px] font-semibold text-gray-400 uppercase tracking-wider px-1">
+              Recent Chats (SQLite)
+            </p>
+            <div className="max-h-48 overflow-y-auto space-y-1 pr-1 custom-scrollbar">
+              {recentSessions.length === 0 ? (
+                <p className="text-xs text-gray-500 italic px-2 py-1">No previous chats yet</p>
+              ) : (
+                recentSessions.map((s) => (
+                  <div
+                    key={s.id}
+                    onClick={() => loadPastSession(s.id)}
+                    className={`p-2 rounded-lg cursor-pointer transition flex items-center justify-between group text-xs ${
+                      sessionId === s.id
+                        ? "bg-blue-600/30 border border-blue-500/40 text-white font-medium shadow-sm"
+                        : "text-gray-300 hover:bg-white/5 border border-transparent"
+                    }`}
+                    title={`Session: ${s.id}`}
+                  >
+                    <div className="flex items-center truncate mr-2">
+                      <span className="mr-2 opacity-70">💬</span>
+                      <span className="truncate">{s.title}</span>
+                    </div>
+                    <button
+                      onClick={(e) => deleteSession(e, s.id)}
+                      className="text-gray-500 hover:text-red-400 transition-colors p-1 opacity-0 group-hover:opacity-100"
+                      title="Remove from sidebar"
+                    >
+                      <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          strokeWidth="2"
+                          d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
+                        />
+                      </svg>
+                    </button>
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+
+          <hr className="border-white/10" />
+
           {/* System Prompt Box */}
           <div className="space-y-2">
             <label className="text-xs font-semibold text-gray-300 uppercase tracking-wider flex items-center gap-1.5">
@@ -200,24 +313,24 @@ export default function App() {
             </p>
             <textarea
               data-testid="system-prompt-input"
-              rows={3}
+              rows={2}
               value={systemPrompt}
               onChange={(e) => setSystemPrompt(e.target.value)}
               placeholder="e.g. You are a concise and helpful AI technical assistant..."
-              className="w-full bg-white/5 border border-white/10 rounded-xl p-3 text-xs text-white placeholder-gray-500 focus:outline-none focus:ring-1 focus:ring-blue-500/50 resize-none font-sans"
+              className="w-full bg-white/5 border border-white/10 rounded-xl p-2.5 text-xs text-white placeholder-gray-500 focus:outline-none focus:ring-1 focus:ring-blue-500/50 resize-none font-sans"
             />
           </div>
 
           {/* Failover Test Hook */}
-          <div className="space-y-2.5 bg-white/5 p-4 rounded-xl border border-white/10">
+          <div className="space-y-2 bg-white/5 p-3.5 rounded-xl border border-white/10">
             <label className="text-xs font-semibold text-gray-300 uppercase tracking-wider flex items-center justify-between">
               <span className="flex items-center gap-1.5">
-                <span>⚡</span> Failover Test Hook
+                <span>⚡</span> Failover Hook
               </span>
               <span className="text-[10px] text-blue-400 lowercase font-mono">X-Simulate-Failure</span>
             </label>
             <p className="text-[11px] text-gray-400 leading-relaxed">
-              Force key failure for one request to verify fallback without burning real API quota:
+              Force key failure for one request to test fallback:
             </p>
             <select
               value={simulateFailure}
@@ -232,22 +345,22 @@ export default function App() {
           </div>
 
           {/* Quick Info / Assignment Spec Checklist */}
-          <div className="flex-1 space-y-2.5 text-xs text-gray-400">
+          <div className="flex-1 space-y-2 text-xs text-gray-400">
             <p className="font-semibold text-gray-300 uppercase tracking-wider text-[11px]">
               Behavior Guidelines
             </p>
             <div className="p-3 bg-white/[0.02] border border-white/5 rounded-lg space-y-1.5 text-[11px] leading-relaxed">
               <div className="flex items-start gap-1.5">
                 <span className="text-blue-400">•</span>
-                <span><strong>Multi-turn:</strong> Conversation history persisted per session in SQLite.</span>
+                <span><strong>Multi-turn:</strong> Persisted in SQLite per session.</span>
               </div>
               <div className="flex items-start gap-1.5">
                 <span className="text-green-400">•</span>
-                <span><strong>Cache Hit:</strong> Identical message returns <code className="text-green-300">LLM_CACHE</code> with faster latency.</span>
+                <span><strong>Cache Hit:</strong> Returns <code className="text-green-300">LLM_CACHE</code> with lower latency.</span>
               </div>
               <div className="flex items-start gap-1.5">
                 <span className="text-purple-400">•</span>
-                <span><strong>Key Pool:</strong> Automatic failover across configured keys on 429/5xx.</span>
+                <span><strong>Key Pool:</strong> Auto failover across configured keys.</span>
               </div>
             </div>
           </div>
@@ -333,7 +446,7 @@ export default function App() {
 
                         {/* Key Info / Failover attempts if present */}
                         {msg.metadata.key_id && (
-                          <span className="bg-white/5 text-gray-400 px-1.5 py-0.5 rounded text-[10px]">
+                          <span className="bg-white/10 text-gray-300 px-2 py-0.5 rounded text-[11px] font-mono border border-white/10">
                             key: {msg.metadata.key_id}
                           </span>
                         )}
@@ -390,7 +503,7 @@ export default function App() {
                   className={`ml-3 px-4 py-1.5 rounded-lg text-sm font-medium transition flex items-center gap-1.5 ${
                     loading || !input.trim()
                       ? "bg-white/10 text-gray-400 cursor-not-allowed"
-                      : "bg-blue-600 text-white hover:bg-blue-500 shadow-lg shadow-blue-500/20 active:scale-95"
+                      : "bg-blue-600 text-white hover:bg-blue-500 shadow-lg shadow-blue-500/20 active:scale-95 cursor-pointer"
                   }`}
                 >
                   <span>Send</span>
@@ -402,7 +515,7 @@ export default function App() {
 
               <div className="flex items-center justify-between text-[11px] text-gray-500 mt-2 px-1">
                 <span>Press <kbd className="px-1 py-0.5 bg-white/10 rounded text-[10px]">Enter ↵</kbd> to send</span>
-                <span>Active Model: Gemini 2.0 Flash (via LiteLLM)</span>
+                <span>Active Model: Gemini (via LiteLLM)</span>
               </div>
             </div>
           </div>
