@@ -5,8 +5,8 @@ A resilient, production-ready Full-Stack LLM Chatbot application featuring multi
 ---
 
 ## 1. Live URLs
-* **Frontend:** *[Deploy to Vercel/Netlify/Render and insert link here]*
-* **Backend:** *[Deploy to Render/Railway/Fly.io and insert link here]*
+* **Frontend:** [https://chatbot-sigma-six-39.vercel.app](https://chatbot-sigma-six-39.vercel.app)
+* **Backend:** [https://chatbot-vt5j.onrender.com](https://chatbot-vt5j.onrender.com)
 * **Demo Video:** *[Insert 2–3 minute Loom or Google Drive link here]*
 
 ---
