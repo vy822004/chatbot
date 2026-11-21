@@ -69,6 +69,11 @@ def execute_llm_request(
             detail="all providers unavailable",
         )
 
+    models_to_try = [settings.LLM_MODEL]
+    for fb in settings.FALLBACK_MODELS:
+        if fb not in models_to_try:
+            models_to_try.append(fb)
+
     for idx, key_value in enumerate(keys):
         key_id = f"key_{idx + 1}"
 
@@ -78,78 +83,80 @@ def execute_llm_request(
             fallback_attempts += 1
             continue
 
-        # 2. Attempt completion
-        try:
-            # Use mock_response if MOCK_LLM is enabled or in test mode
-            kwargs: Dict[str, Any] = {
-                "model": settings.LLM_MODEL,
-                "messages": messages,
-                "api_key": key_value,
-            }
+        # 2. Attempt completion across available model tiers for high availability
+        for selected_model in models_to_try:
+            try:
+                # Use mock_response if MOCK_LLM is enabled or in test mode
+                kwargs: Dict[str, Any] = {
+                    "model": selected_model,
+                    "messages": messages,
+                    "api_key": key_value,
+                }
 
-            if os.getenv("MOCK_LLM", "false").lower() in ("true", "1", "yes"):
-                kwargs["mock_response"] = (
-                    f"Mock reply to: {messages[-1]['content']}"
+                if os.getenv("MOCK_LLM", "false").lower() in ("true", "1", "yes"):
+                    kwargs["mock_response"] = (
+                        f"Mock reply to: {messages[-1]['content']}"
+                    )
+
+                # If simulation is active for SOME keys, bypass reading from cache
+                # so we verify the actual fallback key (e.g. key_2) answering
+                if is_simulation_active:
+                    kwargs["caching"] = False
+
+                response = litellm.completion(**kwargs)
+
+                # Check if this was a cache hit
+                is_cache_hit = (
+                    getattr(response, "_hidden_params", {}).get("cache_hit") is True
                 )
 
-            # If simulation is active for SOME keys, bypass reading from cache
-            # so we verify the actual fallback key (e.g. key_2) answering
-            if is_simulation_active:
-                kwargs["caching"] = False
+                latency_ms = max(1, int((time.perf_counter() - start_time) * 1000))
 
-            response = litellm.completion(**kwargs)
+                # Extract reply text
+                reply = ""
+                if response.choices and len(response.choices) > 0:
+                    reply = response.choices[0].message.content or ""
 
-            # Check if this was a cache hit
-            is_cache_hit = (
-                getattr(response, "_hidden_params", {}).get("cache_hit") is True
-            )
+                # Extract tokens
+                prompt_tokens = 0
+                completion_tokens = 0
+                if hasattr(response, "usage") and response.usage:
+                    prompt_tokens = getattr(response.usage, "prompt_tokens", 0) or 0
+                    completion_tokens = (
+                        getattr(response.usage, "completion_tokens", 0) or 0
+                    )
 
-            latency_ms = max(1, int((time.perf_counter() - start_time) * 1000))
+                if is_cache_hit:
+                    # Cache hit: key_id is null, fallback_attempts is 0
+                    metadata = ChatMetadata(
+                        resolution_source="LLM_CACHE",
+                        model=selected_model,
+                        latency_ms=latency_ms,
+                        input_tokens=prompt_tokens,
+                        output_tokens=completion_tokens,
+                        key_id=None,
+                        fallback_attempts=0,
+                    )
+                else:
+                    metadata = ChatMetadata(
+                        resolution_source="LIVE_INFERENCE",
+                        model=selected_model,
+                        latency_ms=latency_ms,
+                        input_tokens=prompt_tokens,
+                        output_tokens=completion_tokens,
+                        key_id=key_id,
+                        fallback_attempts=fallback_attempts,
+                    )
 
-            # Extract reply text
-            reply = ""
-            if response.choices and len(response.choices) > 0:
-                reply = response.choices[0].message.content or ""
+                return reply, metadata
 
-            # Extract tokens
-            prompt_tokens = 0
-            completion_tokens = 0
-            if hasattr(response, "usage") and response.usage:
-                prompt_tokens = getattr(response.usage, "prompt_tokens", 0) or 0
-                completion_tokens = (
-                    getattr(response.usage, "completion_tokens", 0) or 0
-                )
+            except Exception as e:
+                # Key or Model failed (rate limit 429, quota, 5xx, or temporary high demand)
+                print(f"⚠️ [LiteLLM Error on {key_id} with {selected_model}]: {e}")
+                continue
 
-            if is_cache_hit:
-                # Cache hit: key_id is null, fallback_attempts is 0
-                metadata = ChatMetadata(
-                    resolution_source="LLM_CACHE",
-                    model=settings.LLM_MODEL,
-                    latency_ms=latency_ms,
-                    input_tokens=prompt_tokens,
-                    output_tokens=completion_tokens,
-                    key_id=None,
-                    fallback_attempts=0,
-                )
-            else:
-                metadata = ChatMetadata(
-                    resolution_source="LIVE_INFERENCE",
-                    model=settings.LLM_MODEL,
-                    latency_ms=latency_ms,
-                    input_tokens=prompt_tokens,
-                    output_tokens=completion_tokens,
-                    key_id=key_id,
-                    fallback_attempts=fallback_attempts,
-                )
-
-            return reply, metadata
-
-        except Exception as e:
-            # Key failed (rate limit 429, quota, 5xx, or network error)
-            print(f"⚠️ [LiteLLM Error on {key_id}]: {e}")
-            fallback_attempts += 1
-            # Continue to next key in pool
-            continue
+        # If all models failed for this key, increment fallback count and try next key
+        fallback_attempts += 1
 
     # If loop completed without returning, all keys failed
     raise HTTPException(

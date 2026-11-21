@@ -23,7 +23,12 @@ class Settings:
     ENABLE_FAILURE_SIMULATION: bool = (
         os.getenv("ENABLE_FAILURE_SIMULATION", "true").lower() in ("true", "1", "yes")
     )
-    LLM_MODEL: str = os.getenv("LLM_MODEL", "gemini/gemini-2.0-flash")
+    LLM_MODEL: str = os.getenv("LLM_MODEL", "gemini/gemini-3.5-flash-lite")
+    FALLBACK_MODELS: List[str] = [
+        m.strip()
+        for m in os.getenv("FALLBACK_MODELS", "gemini/gemini-3-flash-preview").split(",")
+        if m.strip()
+    ]
     DEFAULT_SYSTEM_PROMPT: str = os.getenv(
         "DEFAULT_SYSTEM_PROMPT", "You are a helpful and concise AI assistant."
     )
