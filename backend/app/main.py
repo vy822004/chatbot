@@ -134,6 +134,8 @@ async def post_chat(
         content=reply,
         metadata={
             "resolution_source": metadata.resolution_source,
+            "model": metadata.model,
+            "latency_ms": metadata.latency_ms,
             "input_tokens": metadata.input_tokens,
             "output_tokens": metadata.output_tokens,
         },

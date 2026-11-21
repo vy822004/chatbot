@@ -423,7 +423,7 @@ export default function App() {
                           data-testid="meta-model"
                           className="bg-white/5 text-gray-300 px-2 py-0.5 rounded border border-white/10"
                         >
-                          {msg.metadata.model || "unknown"}
+                          {msg.metadata.model || "gemini/gemini-3.5-flash-lite"}
                         </span>
 
                         {/* Latency */}
