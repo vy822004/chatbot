@@ -72,7 +72,7 @@ async def generic_exception_handler(request: Request, exc: Exception):
     )
 
 
-@app.get("/health", response_model=HealthResponse)
+@app.api_route("/health", methods=["GET", "HEAD"], response_model=HealthResponse)
 async def get_health():
     """
     Returns 200 once app is running, DB is reachable, and key pool is loaded.

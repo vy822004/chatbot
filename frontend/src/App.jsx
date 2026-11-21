@@ -22,11 +22,14 @@ export default function App() {
 
   const endRef = useRef(null);
 
-  // Initialize session on mount & load recent sessions from localStorage
+  // Initialize session on mount & start periodic health polling
   useEffect(() => {
     const newId = generateSessionId();
     setSessionId(newId);
     checkHealth();
+
+    // Periodically poll health so status badge updates automatically
+    const interval = setInterval(checkHealth, 5000);
 
     try {
       const stored = localStorage.getItem("lyftr_recent_sessions");
@@ -36,6 +39,8 @@ export default function App() {
     } catch {
       // Ignore localStorage read errors
     }
+
+    return () => clearInterval(interval);
   }, []);
 
   // Auto-scroll on new messages
@@ -182,6 +187,7 @@ export default function App() {
       };
 
       setMessages((prev) => [...prev, assistantMessage]);
+      checkHealth();
     } catch (err) {
       setMessages((prev) => [
         ...prev,
