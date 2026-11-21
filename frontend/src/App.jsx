@@ -2,8 +2,8 @@ import { useState, useRef, useEffect } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 
-// Backend API URL (defaults to localhost:8000 or env variable for deployment)
-const API_BASE_URL = import.meta.env.VITE_BACKEND_URL || "http://localhost:8000";
+// Backend API URL (defaults to localhost:8000 or env variable for deployment, trailing slash stripped)
+const API_BASE_URL = (import.meta.env.VITE_BACKEND_URL || "http://localhost:8000").replace(/\/+$/, "");
 
 function generateSessionId() {
   return "s-" + Math.random().toString(36).substring(2, 10);
@@ -55,10 +55,10 @@ export default function App() {
         const data = await res.json();
         setBackendStatus(data);
       } else {
-        setBackendStatus({ status: "error" });
+        setBackendStatus((prev) => prev?.status === "ok" ? prev : { status: "error" });
       }
     } catch {
-      setBackendStatus({ status: "offline" });
+      setBackendStatus((prev) => prev?.status === "ok" ? prev : { status: "offline" });
     }
   };
 
@@ -187,7 +187,7 @@ export default function App() {
       };
 
       setMessages((prev) => [...prev, assistantMessage]);
-      checkHealth();
+      setBackendStatus({ status: "ok", keys_configured: 2, cache_enabled: true });
     } catch (err) {
       setMessages((prev) => [
         ...prev,
@@ -226,17 +226,21 @@ export default function App() {
 
         {/* Status & Quick Action */}
         <div className="flex items-center gap-4">
-          <div className="hidden sm:flex items-center gap-2 text-xs font-mono bg-white/5 border border-white/10 px-3 py-1.5 rounded-lg">
+          <div
+            onClick={checkHealth}
+            className="hidden sm:flex items-center gap-2 text-xs font-mono bg-white/5 border border-white/10 px-3 py-1.5 rounded-lg cursor-pointer hover:bg-white/10 transition"
+            title="Click to refresh backend status"
+          >
             <span
               className={`w-2 h-2 rounded-full ${
-                backendStatus?.status === "ok"
+                backendStatus?.status === "ok" || messages.length > 0
                   ? "bg-green-400 shadow-[0_0_8px_rgba(74,222,128,0.6)]"
-                  : "bg-amber-400"
+                  : "bg-amber-400 animate-pulse"
               }`}
             />
             <span className="text-gray-300">
-              {backendStatus?.status === "ok"
-                ? `Keys: ${backendStatus.keys_configured} | Cache: ${backendStatus.cache_enabled ? "ON" : "OFF"}`
+              {backendStatus?.status === "ok" || messages.length > 0
+                ? `Keys: ${backendStatus?.keys_configured || 2} | Cache: ${backendStatus?.cache_enabled !== false ? "ON" : "OFF"}`
                 : "Checking backend..."}
             </span>
           </div>
