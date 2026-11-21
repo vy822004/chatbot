@@ -108,6 +108,8 @@ def execute_llm_request(
                 # Check if this was a cache hit
                 is_cache_hit = (
                     getattr(response, "_hidden_params", {}).get("cache_hit") is True
+                    or getattr(response, "hidden_params", {}).get("cache_hit") is True
+                    or getattr(response, "cache_hit", False) is True
                 )
 
                 latency_ms = max(1, int((time.perf_counter() - start_time) * 1000))
