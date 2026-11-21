@@ -72,6 +72,16 @@ async def generic_exception_handler(request: Request, exc: Exception):
     )
 
 
+@app.get("/")
+async def root():
+    return {
+        "name": "Lyftr AI Gateway API",
+        "status": "running",
+        "health": "/health",
+        "docs": "/docs",
+    }
+
+
 @app.api_route("/health", methods=["GET", "HEAD"], response_model=HealthResponse)
 async def get_health():
     """
