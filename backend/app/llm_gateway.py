@@ -146,6 +146,7 @@ def execute_llm_request(
 
         except Exception as e:
             # Key failed (rate limit 429, quota, 5xx, or network error)
+            print(f"⚠️ [LiteLLM Error on {key_id}]: {e}")
             fallback_attempts += 1
             # Continue to next key in pool
             continue
